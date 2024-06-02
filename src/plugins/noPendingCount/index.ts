@@ -19,9 +19,9 @@
 import { definePluginSettings } from "@api/Settings";
 import { Devs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
-import { findByPropsLazy } from "@webpack";
+import { findByProps } from "@webpack";
 
-const MessageRequestStore = findByPropsLazy("getMessageRequestsCount");
+const MessageRequestStore = findByProps("getMessageRequestsCount");
 
 const settings = definePluginSettings({
     hideFriendRequestsCount: {
@@ -62,6 +62,16 @@ export default definePlugin({
                 replace: "return 0;"
             }
         },
+        // New message requests hook
+        {
+            find: "useNewMessageRequestsCount:",
+            predicate: () => settings.store.hideMessageRequestsCount,
+            replacement: {
+                match: /getNonChannelAckId\(\i\.\i\.MESSAGE_REQUESTS\).+?return /,
+                replace: "$&0;"
+            }
+        },
+        // Old message requests hook
         {
             find: "getMessageRequestsCount(){",
             predicate: () => settings.store.hideMessageRequestsCount,

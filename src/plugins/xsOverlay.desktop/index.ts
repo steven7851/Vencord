@@ -9,11 +9,11 @@ import { makeRange } from "@components/PluginSettings/components";
 import { Devs } from "@utils/constants";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType, PluginNative, ReporterTestable } from "@utils/types";
-import { findByPropsLazy } from "@webpack";
+import { findByProps } from "@webpack";
 import { ChannelStore, GuildStore, UserStore } from "@webpack/common";
 import type { Channel, Embed, GuildMember, MessageAttachment, User } from "discord-types/general";
 
-const { ChannelTypes } = findByPropsLazy("ChannelTypes");
+const { ChannelTypes } = findByProps("ChannelTypes");
 
 interface Message {
     guild_id: string,
@@ -68,7 +68,7 @@ interface Call {
     ringing: string[];
 }
 
-const Notifs = findByPropsLazy("makeTextChatNotification");
+const Notifs = findByProps("makeTextChatNotification");
 const XSLog = new Logger("XSOverlay");
 
 const settings = definePluginSettings({

@@ -23,11 +23,11 @@ import { Devs } from "@utils/constants";
 import { Logger } from "@utils/Logger";
 import { Margins } from "@utils/margins";
 import definePlugin, { OptionType } from "@utils/types";
-import { findByPropsLazy } from "@webpack";
+import { findByProps } from "@webpack";
 import { Forms, React, UserStore } from "@webpack/common";
 import { User } from "discord-types/general";
 
-const KbdStyles = findByPropsLazy("key", "removeBuildOverride");
+const KbdStyles = findByProps("key", "removeBuildOverride");
 
 const settings = definePluginSettings({
     enableIsStaff: {

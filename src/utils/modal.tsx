@@ -16,10 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { findByPropsLazy, findExportedComponentLazy } from "@webpack";
+import { filters, find, findByProps, findExportedComponent } from "@webpack";
 import type { ComponentType, PropsWithChildren, ReactNode, Ref } from "react";
 
-import { LazyComponent } from "./react";
+import { NoopComponent } from "./react";
 
 export const enum ModalSize {
     SMALL = "small",
@@ -49,7 +49,7 @@ export interface ModalOptions {
 
 type RenderFunction = (props: ModalProps) => ReactNode;
 
-export const Modals = findByPropsLazy("ModalRoot", "ModalCloseButton") as {
+type Modals = {
     ModalRoot: ComponentType<PropsWithChildren<{
         transitionState: ModalTransitionState;
         size?: ModalSize;
@@ -101,7 +101,20 @@ export const Modals = findByPropsLazy("ModalRoot", "ModalCloseButton") as {
     }>;
 };
 
-export type ImageModal = ComponentType<{
+
+export let ModalRoot: Modals["ModalRoot"] = NoopComponent;
+export let ModalHeader: Modals["ModalHeader"] = NoopComponent;
+export let ModalContent: Modals["ModalContent"] = NoopComponent;
+export let ModalFooter: Modals["ModalFooter"] = NoopComponent;
+export let ModalCloseButton: Modals["ModalCloseButton"] = NoopComponent;
+
+export const Modals = find<Modals>(filters.byProps("ModalRoot", "ModalCloseButton"), (m: Modals) => {
+    ({ ModalRoot, ModalHeader, ModalContent, ModalFooter, ModalCloseButton } = m);
+
+    return m;
+});
+
+export type ImageModalProps = {
     className?: string;
     src: string;
     placeholder: string;
@@ -116,17 +129,11 @@ export type ImageModal = ComponentType<{
     shouldAnimate?: boolean;
     onClose?(): void;
     shouldHideMediaOptions?: boolean;
-}>;
+};
 
-export const ImageModal = findExportedComponentLazy("ImageModal") as ImageModal;
+export const ImageModal = findExportedComponent<ImageModalProps>("ImageModal");
 
-export const ModalRoot = LazyComponent(() => Modals.ModalRoot);
-export const ModalHeader = LazyComponent(() => Modals.ModalHeader);
-export const ModalContent = LazyComponent(() => Modals.ModalContent);
-export const ModalFooter = LazyComponent(() => Modals.ModalFooter);
-export const ModalCloseButton = LazyComponent(() => Modals.ModalCloseButton);
-
-const ModalAPI = findByPropsLazy("openModalLazy");
+const ModalAPI = findByProps("openModalLazy");
 
 /**
  * Wait for the render promise to resolve, then open a modal with it.

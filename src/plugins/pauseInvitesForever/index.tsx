@@ -19,10 +19,10 @@
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
-import { findByPropsLazy } from "@webpack";
+import { findByProps } from "@webpack";
 import { Constants, GuildStore, i18n, RestAPI } from "@webpack/common";
 
-const { InvitesDisabledExperiment } = findByPropsLazy("InvitesDisabledExperiment");
+const { InvitesDisabledExperiment } = findByProps("InvitesDisabledExperiment");
 
 function showDisableInvites(guildId: string) {
     // Once the experiment is removed, this should keep working

@@ -9,10 +9,10 @@ import { ImageIcon } from "@components/Icons";
 import { Devs } from "@utils/constants";
 import { getCurrentGuild, openImageModal } from "@utils/discord";
 import definePlugin, { OptionType } from "@utils/types";
-import { findByPropsLazy } from "@webpack";
+import { findByProps } from "@webpack";
 import { Clipboard, GuildStore, Menu, PermissionStore, TextAndImagesSettingsStores } from "@webpack/common";
 
-const GuildSettingsActions = findByPropsLazy("open", "selectRole", "updateGuild");
+const GuildSettingsActions = findByProps("open", "selectRole", "updateGuild");
 
 function PencilIcon() {
     return (

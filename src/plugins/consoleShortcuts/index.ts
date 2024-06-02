@@ -21,10 +21,12 @@ import { getCurrentChannel, getCurrentGuild } from "@utils/discord";
 import { SYM_LAZY_CACHED, SYM_LAZY_GET } from "@utils/lazy";
 import { relaunch } from "@utils/native";
 import { canonicalizeMatch, canonicalizeReplace, canonicalizeReplacement } from "@utils/patches";
+import { SYM_PROXY_INNER_GET, SYM_PROXY_INNER_VALUE } from "@utils/proxyInner";
 import definePlugin, { PluginNative, StartAt } from "@utils/types";
 import * as Webpack from "@webpack";
-import { extract, filters, findAll, findModuleId, search } from "@webpack";
+import { cacheFindAll, extract, filters, findModuleId, search } from "@webpack";
 import * as Common from "@webpack/common";
+import { loadLazyChunks } from "debug/loadLazyChunks";
 import type { ComponentType } from "react";
 
 const DESKTOP_ONLY = (f: string) => () => {
@@ -51,7 +53,7 @@ function makeShortcuts() {
             const cacheKey = String(filterProps);
             if (cache.has(cacheKey)) return cache.get(cacheKey);
 
-            const matches = findAll(filterFactory(...filterProps));
+            const matches = cacheFindAll(filterFactory(...filterProps));
 
             const result = (() => {
                 switch (matches.length) {
@@ -79,17 +81,19 @@ function makeShortcuts() {
         wp: Webpack,
         wpc: { getter: () => Webpack.cache },
         wreq: { getter: () => Webpack.wreq },
+        WebpackInstances: { getter: () => Vencord.WebpackPatcher.allWebpackInstances },
         wpsearch: search,
         wpex: extract,
         wpexs: (code: string) => extract(findModuleId(code)!),
+        loadLazyChunks: IS_DEV ? loadLazyChunks : () => { throw new Error("loadLazyChunks is dev only."); },
         find,
-        findAll: findAll,
+        findAll: cacheFindAll,
         findByProps,
-        findAllByProps: (...props: string[]) => findAll(filters.byProps(...props)),
+        findAllByProps: (...props: string[]) => cacheFindAll(filters.byProps(...props)),
         findByCode: newFindWrapper(filters.byCode),
-        findAllByCode: (code: string) => findAll(filters.byCode(code)),
+        findAllByCode: (code: string) => cacheFindAll(filters.byCode(code)),
         findComponentByCode: newFindWrapper(filters.componentByCode),
-        findAllComponentsByCode: (...code: string[]) => findAll(filters.componentByCode(...code)),
+        findAllComponentsByCode: (...code: string[]) => cacheFindAll(filters.componentByCode(...code)),
         findExportedComponent: (...props: string[]) => findByProps(...props)[props[0]],
         findStore: newFindWrapper(filters.byStoreName),
         PluginsApi: { getter: () => Vencord.Plugins },
@@ -147,9 +151,14 @@ function loadAndCacheShortcut(key: string, val: any, forceLoad: boolean) {
     const currentVal = val.getter();
     if (!currentVal || val.preload === false) return currentVal;
 
-    const value = currentVal[SYM_LAZY_GET]
-        ? forceLoad ? currentVal[SYM_LAZY_GET]() : currentVal[SYM_LAZY_CACHED]
-        : currentVal;
+    let value: any;
+    if (currentVal[SYM_LAZY_GET]) {
+        value = forceLoad ? currentVal[SYM_LAZY_GET]() : currentVal[SYM_LAZY_CACHED];
+    } else if (currentVal[SYM_PROXY_INNER_GET]) {
+        value = forceLoad ? currentVal[SYM_PROXY_INNER_GET]() : currentVal[SYM_PROXY_INNER_VALUE];
+    } else {
+        value = currentVal;
+    }
 
     if (value) define(window.shortcutList, key, { value });
 
@@ -182,7 +191,7 @@ export default definePlugin({
         }
 
         // unproxy loaded modules
-        Webpack.onceReady.then(() => {
+        Webpack.onceDiscordLoaded.then(() => {
             setTimeout(() => this.eagerLoad(false), 1000);
 
             if (!IS_WEB) {
@@ -193,7 +202,7 @@ export default definePlugin({
     },
 
     async eagerLoad(forceLoad: boolean) {
-        await Webpack.onceReady;
+        await Webpack.onceDiscordLoaded;
 
         const shortcuts = makeShortcuts();
 

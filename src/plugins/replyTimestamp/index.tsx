@@ -9,14 +9,14 @@ import "./style.css";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
-import { findByPropsLazy } from "@webpack";
+import { findByProps } from "@webpack";
 import { Timestamp } from "@webpack/common";
 import type { Message } from "discord-types/general";
 import type { HTMLAttributes } from "react";
 
-const { getMessageTimestampId } = findByPropsLazy("getMessageTimestampId");
-const { calendarFormat, dateFormat, isSameDay } = findByPropsLazy("calendarFormat", "dateFormat", "isSameDay", "accessibilityLabelCalendarFormat");
-const MessageClasses = findByPropsLazy("separator", "latin24CompactTimeStamp");
+const { getMessageTimestampId } = findByProps("getMessageTimestampId");
+const { calendarFormat, dateFormat, isSameDay } = findByProps("calendarFormat", "dateFormat", "isSameDay", "accessibilityLabelCalendarFormat");
+const MessageClasses = findByProps("separator", "latin24CompactTimeStamp");
 
 function Sep(props: HTMLAttributes<HTMLElement>) {
     return <i className={MessageClasses.separator} aria-hidden={true} {...props} />;
