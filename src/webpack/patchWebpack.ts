@@ -84,6 +84,7 @@ define(Function.prototype, "O", {
                 continue;
             }
 
+            notifyFactoryListeners(this.m[id]);
             defineModulesFactoryGetter(id, Settings.eagerPatches ? patchFactory(id, this.m[id]) : this.m[id]);
         }
 
@@ -103,38 +104,39 @@ define(Function.prototype, "O", {
     }
 });
 
-/**
- * Define the getter for returning the patched version of the module factory.
- *
- * If eagerPatches is enabled, the factory argument should already be the patched version, else it will be the original
- * and only be patched when accessed for the first time.
- *
- * @param id The id of the module
- * @param factory The original or patched module factory
- */
-function defineModulesFactoryGetter(id: PropertyKey, factory: PatchedModuleFactory) {
-    // Define the getter in all the module factories objects. Patches are only executed once, so make sure all module factories object
-    // have the patched version
-    for (const wreq of allWebpackInstances) {
-        define(wreq.m, id, {
-            get() {
-                // $$vencordOriginal means the factory is already patched
-                if (factory.$$vencordOriginal != null) {
-                    return factory;
-                }
+const moduleFactoriesHandler: ProxyHandler<PatchedModuleFactories> = {
+    /*
+    If Discord ever decides to set module factories using the variable of the modules object directly instead of wreq.m, we need to switch the proxy to the prototype
+    and that requires defining additional traps for keeping the object working
 
-                return (factory = patchFactory(id, factory));
-            },
-            set(v: AnyModuleFactory) {
-                if (factory.$$vencordOriginal != null) {
-                    factory.$$vencordOriginal = v;
-                } else {
-                    factory = v;
-                }
-            }
-        });
+    // Proxies on the prototype dont intercept "get" when the property is in the object itself. But in case it isn't we need to return undefined,
+    // to avoid Reflect.get having no effect and causing a stack overflow
+    get: (target, p, receiver) => {
+        return undefined;
+    },
+    // Same thing as get
+    has: (target, p) => {
+        return false;
     }
-}
+    */
+
+    // The set trap for patching or defining getters for the module factories when new module factories are loaded
+    set: (target, p, newValue, receiver) => {
+        // If the property is not a number, we are not dealing with a module factory
+        if (Number.isNaN(Number(p))) {
+            return define(target, p, { value: newValue });
+        }
+
+        if (updateExistingFactory(target, p, newValue)) {
+            return true;
+        }
+
+        notifyFactoryListeners(newValue);
+        defineModulesFactoryGetter(p, Settings.eagerPatches ? patchFactory(p, newValue) : newValue);
+
+        return true;
+    }
+};
 
 /**
  * Update a factory that exists in any Webpack instance with a new original factory.
@@ -168,49 +170,54 @@ function updateExistingFactory(moduleFactoriesTarget: AnyWebpackRequire["m"], id
     return false;
 }
 
-const moduleFactoriesHandler: ProxyHandler<PatchedModuleFactories> = {
-    /*
-    If Discord ever decides to set module factories using the variable of the modules object directly instead of wreq.m, we need to switch the proxy to the prototype
-    and that requires defining additional traps for keeping the object working
-
-    // Proxies on the prototype dont intercept "get" when the property is in the object itself. But in case it isn't we need to return undefined,
-    // to avoid Reflect.get having no effect and causing a stack overflow
-    get: (target, p, receiver) => {
-        return undefined;
-    },
-    // Same thing as get
-    has: (target, p) => {
-        return false;
+/**
+ * Notify all factory listeners.
+ *
+ * @param factory The original factory to notify for
+ */
+function notifyFactoryListeners(factory: AnyModuleFactory) {
+    for (const factoryListener of factoryListeners) {
+        try {
+            factoryListener(factory);
+        } catch (err) {
+            logger.error("Error in Webpack factory listener:\n", err, factoryListener);
+        }
     }
-    */
+}
 
-    // The set trap for patching or defining getters for the module factories when new module factories are loaded
-    set: (target, p, newValue, receiver) => {
-        // If the property is not a number, we are not dealing with a module factory
-        if (Number.isNaN(Number(p))) {
-            return define(target, p, { value: newValue });
-        }
+/**
+ * Define the getter for returning the patched version of the module factory.
+ *
+ * If eagerPatches is enabled, the factory argument should already be the patched version, else it will be the original
+ * and only be patched when accessed for the first time.
+ *
+ * @param id The id of the module
+ * @param factory The original or patched module factory
+ */
+function defineModulesFactoryGetter(id: PropertyKey, factory: PatchedModuleFactory) {
+    // Define the getter in all the module factories objects. Patches are only executed once, so make sure all module factories object
+    // have the patched version
+    for (const wreq of allWebpackInstances) {
+        define(wreq.m, id, {
+            get() {
+                // $$vencordOriginal means the factory is already patched
+                if (factory.$$vencordOriginal != null) {
+                    return factory;
+                }
 
-        if (updateExistingFactory(target, p, newValue)) {
-            return true;
-        }
-
-        if (!Settings.eagerPatches) {
-            // eagerPatches are disabled, so the factory argument should be the original
-            defineModulesFactoryGetter(p, newValue);
-            return true;
-        }
-
-        const patchedFactory = patchFactory(p, newValue);
-
-        // If multiple Webpack instances exist, when new a new module is loaded, it will be set in all the module factories objects.
-        // Because patches are only executed once, we need to set the patched version in all of them, to avoid the Webpack instance
-        // that uses the factory to contain the original factory instead of the patched, in case it was set first in another instance
-        defineModulesFactoryGetter(p, patchedFactory);
-
-        return true;
+                return (factory = patchFactory(id, factory));
+            },
+            set(v: AnyModuleFactory) {
+                if (factory.$$vencordOriginal != null) {
+                    factory.toString = v.toString.bind(v);
+                    factory.$$vencordOriginal = v;
+                } else {
+                    factory = v;
+                }
+            }
+        });
     }
-};
+}
 
 /**
  * Patches a module factory.
@@ -222,14 +229,6 @@ const moduleFactoriesHandler: ProxyHandler<PatchedModuleFactories> = {
  */
 function patchFactory(id: PropertyKey, factory: AnyModuleFactory) {
     const originalFactory = factory;
-
-    for (const factoryListener of factoryListeners) {
-        try {
-            factoryListener(originalFactory);
-        } catch (err) {
-            logger.error("Error in Webpack factory listener:\n", err, factoryListener);
-        }
-    }
 
     const patchedBy = new Set<string>();
 
@@ -340,8 +339,7 @@ function patchFactory(id: PropertyKey, factory: AnyModuleFactory) {
     // The patched factory wrapper, define it in an object to preserve the name after minification
     const patchedFactory: PatchedModuleFactory = {
         PatchedFactory(...args: Parameters<AnyModuleFactory>) {
-            // Restore the original factory in all the module factories objects,
-            // because we want to make sure the original factory is restored properly, no matter what is the Webpack instance
+            // Restore the original factory in all the module factories objects. We want to make sure the original factory is restored properly, no matter what is the Webpack instance
             for (const wreq of allWebpackInstances) {
                 define(wreq.m, id, { value: patchedFactory.$$vencordOriginal });
             }
@@ -369,7 +367,7 @@ function patchFactory(id: PropertyKey, factory: AnyModuleFactory) {
                 }
 
                 if (IS_DEV) {
-                    return originalFactory.apply(this, args);
+                    return patchedFactory.$$vencordOriginal?.apply(this, args);
                 }
             }
 
@@ -379,15 +377,19 @@ function patchFactory(id: PropertyKey, factory: AnyModuleFactory) {
                 factoryReturn = factory.apply(this, args);
             } catch (err) {
                 // Just re-throw Discord errors
-                if (factory === originalFactory) throw err;
+                if (factory === originalFactory) {
+                    throw err;
+                }
 
                 logger.error("Error in patched module factory", err);
-                return originalFactory.apply(this, args);
+                return patchedFactory.$$vencordOriginal?.apply(this, args);
             }
 
             // Webpack sometimes sets the value of module.exports directly, so assign exports to it to make sure we properly handle it
             exports = module?.exports;
-            if (exports == null) return factoryReturn;
+            if (exports == null) {
+                return factoryReturn;
+            }
 
             // There are (at the time of writing) 11 modules exporting the window
             // Make these non enumerable to improve webpack search performance
