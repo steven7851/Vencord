@@ -435,7 +435,7 @@ export function mapMangledModule<S extends PropertyKey>(code: string | string[],
                 }
             }
 
-            const [proxy] = proxyInner(`Webpack mapMangled mapper filter matched no module. Filter: ${printFilter(filter)}`, "Webpack find with proxy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the find.");
+            const [proxy] = proxyInner(`Webpack mapMangledModule mapper filter matched no module. Filter: ${printFilter(filter)}`, "Webpack find with proxy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the find.");
             // Use the proxy to throw errors because no export matched the filter
             mapping[newName] = proxy;
         }
@@ -475,11 +475,11 @@ export const _cacheFind = traceFunction("cacheFind", function _cacheFind(filter:
         if (!mod?.loaded || mod?.exports == null) continue;
 
         if (filter.$$vencordIsFactoryFilter && filter(wreq.m[key])) {
-            return { result: exports, id: key, exportKey: null, factory: wreq.m[key] as AnyModuleFactory };
+            return { result: mod.exports, id: key, exportKey: null, factory: wreq.m[key] as AnyModuleFactory };
         }
 
         if (filter(mod.exports)) {
-            return { result: exports, id: key, exportKey: null, factory: wreq.m[key] as AnyModuleFactory };
+            return { result: mod.exports, id: key, exportKey: null, factory: wreq.m[key] as AnyModuleFactory };
         }
 
         if (typeof mod.exports !== "object") {
@@ -487,7 +487,7 @@ export const _cacheFind = traceFunction("cacheFind", function _cacheFind(filter:
         }
 
         if (mod.exports.default != null && filter(mod.exports.default)) {
-            return { result: exports.default, id: key, exportKey: "default ", factory: wreq.m[key] as AnyModuleFactory };
+            return { result: mod.exports.default, id: key, exportKey: "default ", factory: wreq.m[key] as AnyModuleFactory };
         }
 
         for (const exportKey in mod.exports) if (exportKey.length <= 3) {
