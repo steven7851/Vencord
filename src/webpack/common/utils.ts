@@ -16,7 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { canonicalizeMatch } from "@utils/patches";
 import { Channel } from "discord-types/general";
 
 // eslint-disable-next-line path-alias/no-relative
@@ -69,6 +68,25 @@ const ToastPosition = {
     BOTTOM: 1
 };
 
+export interface ToastData {
+    message: string,
+    id: string,
+    /**
+     * Toasts.Type
+     */
+    type: number,
+    options?: ToastOptions;
+}
+
+export interface ToastOptions {
+    /**
+     * Toasts.Position
+     */
+    position?: number;
+    component?: React.ReactNode,
+    duration?: number;
+}
+
 export const Toasts = {
     Type: ToastType,
     Position: ToastPosition,
@@ -77,40 +95,23 @@ export const Toasts = {
 
     // hack to merge with the following interface, dunno if there's a better way
     ...{} as {
-        show(data: {
-            message: string,
-            id: string,
-            /**
-             * Toasts.Type
-             */
-            type: number,
-            options?: {
-                /**
-                 * Toasts.Position
-                 */
-                position?: number;
-                component?: React.ReactNode,
-                duration?: number;
-            };
-        }): void;
+        show(data: ToastData): void;
         pop(): void;
+        create(message: string, type: number, options?: ToastOptions): ToastData;
     }
 };
 
 waitFor(filters.byProps("showToast"), m => {
     Toasts.show = m.showToast;
     Toasts.pop = m.popToast;
+    Toasts.create = m.createToast;
 });
 
 /**
  * Show a simple toast. If you need more options, use Toasts.show manually
  */
-export function showToast(message: string, type = ToastType.MESSAGE) {
-    Toasts.show({
-        id: Toasts.genId(),
-        message,
-        type
-    });
+export function showToast(message: string, type = ToastType.MESSAGE, options?: ToastOptions) {
+    Toasts.show(Toasts.create(message, type, options));
 }
 
 export const UserUtils: t.UserUtils = {
@@ -150,15 +151,20 @@ export const InviteActions = findByProps("resolveInvite");
 
 export const IconUtils = findByProps<t.IconUtils>("getGuildBannerURL", "getUserAvatarURL");
 
-const openExpressionPickerMatcher = canonicalizeMatch(/setState\({activeView:\i,activeViewType:/);
 // TODO: type
 export const ExpressionPickerStore: t.ExpressionPickerStore = mapMangledModule("expression-picker-last-active-view", {
     closeExpressionPicker: filters.byCode("setState({activeView:null"),
-    openExpressionPicker: m => typeof m === "function" && openExpressionPickerMatcher.test(String(m)),
+    openExpressionPicker: filters.byCode(/setState\({activeView:\i,activeViewType:/),
 });
 
 export const PopoutActions: t.PopoutActions = mapMangledModule('type:"POPOUT_WINDOW_OPEN"', {
     open: filters.byCode('type:"POPOUT_WINDOW_OPEN"'),
     close: filters.byCode('type:"POPOUT_WINDOW_CLOSE"'),
     setAlwaysOnTop: filters.byCode('type:"POPOUT_WINDOW_SET_ALWAYS_ON_TOP"'),
+});
+
+export const UsernameUtils = findByProps<t.UsernameUtils>("useName", "getGlobalName");
+export const DisplayProfileUtils: t.DisplayProfileUtils = mapMangledModule(/=\i\.getUserProfile\(\i\),\i=\i\.getGuildMemberProfile\(/, {
+    getDisplayProfile: filters.byCode(".getGuildMemberProfile("),
+    useDisplayProfile: filters.byCode(/\[\i\.\i,\i\.\i],\(\)=>/)
 });
