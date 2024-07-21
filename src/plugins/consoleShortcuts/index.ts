@@ -19,12 +19,13 @@
 import { Devs } from "@utils/constants";
 import { getCurrentChannel, getCurrentGuild } from "@utils/discord";
 import { SYM_LAZY_CACHED, SYM_LAZY_GET } from "@utils/lazy";
+import { SYM_LAZY_COMPONENT_INNER } from "@utils/lazyReact";
 import { relaunch } from "@utils/native";
 import { canonicalizeMatch, canonicalizeReplace, canonicalizeReplacement } from "@utils/patches";
 import { SYM_PROXY_INNER_GET, SYM_PROXY_INNER_VALUE } from "@utils/proxyInner";
 import definePlugin, { PluginNative, StartAt } from "@utils/types";
 import * as Webpack from "@webpack";
-import { cacheFindAll, extract, filters, search } from "@webpack";
+import { cacheFindAll, cacheFindModuleId, extract, filters, search } from "@webpack";
 import * as Common from "@webpack/common";
 import { loadLazyChunks } from "debug/loadLazyChunks";
 import type { ComponentType } from "react";
@@ -84,7 +85,7 @@ function makeShortcuts() {
         WebpackInstances: { getter: () => Vencord.WebpackPatcher.allWebpackInstances },
         wpsearch: search,
         wpex: extract,
-        wpexs: (code: string) => extract(Webpack.cacheFindModuleId(code)!),
+        wpexs: (code: string) => extract(cacheFindModuleId(code)!),
         loadLazyChunks: IS_DEV ? loadLazyChunks : () => { throw new Error("loadLazyChunks is dev only."); },
         filters,
         find,
@@ -167,25 +168,30 @@ function loadAndCacheShortcut(key: string, val: any, forceLoad: boolean) {
             return forceLoad ? value[SYM_LAZY_GET]() : value[SYM_LAZY_CACHED];
         } else if (value[SYM_PROXY_INNER_GET]) {
             return forceLoad ? value[SYM_PROXY_INNER_GET]() : value[SYM_PROXY_INNER_VALUE];
+        } else if (value[SYM_LAZY_COMPONENT_INNER]) {
+            return value[SYM_LAZY_COMPONENT_INNER]() != null ? value[SYM_LAZY_COMPONENT_INNER]() : value;
         }
 
         return value;
     }
 
     const value = unwrapProxy(currentVal);
-    if (typeof value === "object") {
+    if (value != null && typeof value === "object") {
         const descriptors = Object.getOwnPropertyDescriptors(value);
 
         for (const propKey in descriptors) {
             const descriptor = descriptors[propKey];
 
             if (descriptor.writable === true || descriptor.set != null) {
-                value[propKey] = unwrapProxy(value[propKey]);
+                const newValue = unwrapProxy(value[propKey]);
+                if (newValue != null) {
+                    value[propKey] = newValue;
+                }
             }
         }
     }
 
-    if (value) {
+    if (value != null) {
         define(window.shortcutList, key, { value });
     }
 
