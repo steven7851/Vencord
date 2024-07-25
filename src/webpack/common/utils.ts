@@ -16,8 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { Channel } from "discord-types/general";
-
 // eslint-disable-next-line path-alias/no-relative
 import { _resolveDiscordLoaded, filters, find, findByCode, findByProps, mapMangledModule, waitFor } from "../api";
 import type * as t from "./types/utils";
@@ -120,7 +118,7 @@ export const UserUtils: t.UserUtils = {
 
 export const UploadManager = findByProps("clearAll", "addFile");
 export const UploadHandler: t.UploadHandler = {
-    promptToUpload: findByCode(".ATTACHMENT_TOO_MANY_ERROR_TITLE,") as (files: File[], channel: Channel, draftType: Number) => void
+    promptToUpload: findByCode(".ATTACHMENT_TOO_MANY_ERROR_TITLE,")
 };
 
 export const ApplicationAssetUtils = findByProps<t.ApplicationAssetUtils>("fetchAssetIds", "getAssetImage");

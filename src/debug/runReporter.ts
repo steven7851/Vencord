@@ -18,7 +18,7 @@ async function runReporter() {
     try {
         ReporterLogger.log("Starting test...");
 
-        let loadLazyChunksResolve: (value: void | PromiseLike<void>) => void;
+        let loadLazyChunksResolve: (value: void) => void;
         const loadLazyChunksDone = new Promise<void>(r => loadLazyChunksResolve = r);
 
         // The main patch for starting the reporter chunk loading
@@ -34,9 +34,7 @@ async function runReporter() {
         Vencord.Webpack._initReporter = function () {
             // initReporter is called in the patched entry point of Discord
             // setImmediate to only start searching for lazy chunks after Discord initialized the app
-            setTimeout(async () => {
-                loadLazyChunks().then(loadLazyChunksResolve);
-            }, 0);
+            setTimeout(() => loadLazyChunks().then(loadLazyChunksResolve), 0);
         };
 
         await loadLazyChunksDone;
@@ -99,12 +97,15 @@ async function runReporter() {
                                 result = findResult;
 
                                 for (const innerMap in result) {
-                                    if (result[innerMap][SYM_PROXY_INNER_GET] != null && result[innerMap][SYM_PROXY_INNER_VALUE] == null) {
-                                        throw new Error("Webpack Find Fail");
-                                    } else if (result[innerMap][SYM_LAZY_COMPONENT_INNER] != null && result[innerMap][SYM_LAZY_COMPONENT_INNER]() == null) {
+                                    if (
+                                        (result[innerMap][SYM_PROXY_INNER_GET] != null && result[innerMap][SYM_PROXY_INNER_VALUE] == null) ||
+                                        (result[innerMap][SYM_LAZY_COMPONENT_INNER] != null && result[innerMap][SYM_LAZY_COMPONENT_INNER]() == null)
+                                    ) {
                                         throw new Error("Webpack Find Fail");
                                     }
                                 }
+
+                                break;
                             }
 
                             // This can happen if a `find` was immediately found
@@ -127,9 +128,10 @@ async function runReporter() {
                 if (args[0].$$vencordProps != null) {
                     if (["find", "findComponent", "waitFor"].includes(searchType)) {
                         filterName = args[0].$$vencordProps[0];
+                        parsedArgs = args[0].$$vencordProps.slice(1);
+                    } else {
+                        parsedArgs = args[0].$$vencordProps;
                     }
-
-                    parsedArgs = args[0].$$vencordProps.slice(1);
                 }
 
                 function stringifyCodeFilter(code: string | RegExp | Webpack.CodeFilter) {

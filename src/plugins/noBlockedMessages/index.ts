@@ -20,10 +20,8 @@ import { definePluginSettings } from "@api/Settings";
 import { Devs } from "@utils/constants";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
-import { findByProps } from "@webpack";
+import { RelationshipStore } from "@webpack/common";
 import { Message } from "discord-types/general";
-
-const RelationshipStore = findByProps("getRelationships", "isBlocked");
 
 const settings = definePluginSettings({
     ignoreBlockedMessages: {
