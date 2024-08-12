@@ -92,10 +92,13 @@ function makeShortcuts() {
         findAll: cacheFindAll,
         findByProps,
         findAllByProps: (...props: string[]) => cacheFindAll(filters.byProps(...props)),
+        findProp: (...props: string[]) => findByProps(...props)[props[0]],
         findByCode: newFindWrapper(filters.byCode),
         findAllByCode: (code: string) => cacheFindAll(filters.byCode(code)),
         findComponentByCode: newFindWrapper(filters.componentByCode),
         findAllComponentsByCode: (...code: string[]) => cacheFindAll(filters.componentByCode(...code)),
+        findComponentByFields: newFindWrapper(filters.componentByFields),
+        findAllComponentsByFields: (...fields: string[]) => cacheFindAll(filters.componentByFields(...fields)),
         findExportedComponent: (...props: string[]) => findByProps(...props)[props[0]],
         findStore: newFindWrapper(filters.byStoreName),
         findByFactoryCode: newFindWrapper(filters.byFactoryCode),
@@ -180,11 +183,13 @@ function loadAndCacheShortcut(key: string, val: any, forceLoad: boolean) {
         const descriptors = Object.getOwnPropertyDescriptors(value);
 
         for (const propKey in descriptors) {
-            const descriptor = descriptors[propKey];
+            if (value[propKey] == null) continue;
 
+            const descriptor = descriptors[propKey];
             if (descriptor.writable === true || descriptor.set != null) {
-                const newValue = unwrapProxy(value[propKey]);
-                if (newValue != null) {
+                const currentValue = value[propKey];
+                const newValue = unwrapProxy(currentValue);
+                if (newValue != null && currentValue !== newValue) {
                     value[propKey] = newValue;
                 }
             }

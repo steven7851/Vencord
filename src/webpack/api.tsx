@@ -8,7 +8,7 @@ import { makeLazy, proxyLazy } from "@utils/lazy";
 import { LazyComponent, LazyComponentType, SYM_LAZY_COMPONENT_INNER } from "@utils/lazyReact";
 import { Logger } from "@utils/Logger";
 import { canonicalizeMatch } from "@utils/patches";
-import { proxyInner, SYM_PROXY_INNER_VALUE } from "@utils/proxyInner";
+import { proxyInner, SYM_PROXY_INNER_GET, SYM_PROXY_INNER_VALUE } from "@utils/proxyInner";
 
 import { traceFunction } from "../debug/Tracer";
 import { GenericStore } from "./common";
@@ -113,6 +113,12 @@ export const filters = {
         return filter;
     },
 
+    // For use inside mapMangledModule
+    componentByFilter: (filter: FilterFn): FilterFn => {
+        filter.$$vencordIsComponentFilter = true;
+        return filter;
+    },
+
     componentByCode: (...code: CodeFilter): FilterFn => {
         const byCodeFilter = filters.byCode(...code);
         const filter: FilterFn = m => {
@@ -134,6 +140,15 @@ export const filters = {
         return filter;
     },
 
+    componentByFields: (...fields: PropsFilter): FilterFn => {
+        const byPropsFilter = filters.byProps(...fields);
+        const filter: FilterFn = m => m?.prototype?.render && byPropsFilter(m.prototype);
+
+        filter.$$vencordProps = ["componentByFields", ...fields];
+        filter.$$vencordIsComponentFilter = true;
+        return filter;
+    },
+
     byFactoryCode: (...code: CodeFilter): FilterFn => {
         const byCodeFilter = filters.byCode(...code);
 
@@ -143,7 +158,7 @@ export const filters = {
     }
 };
 
-export const webpackSearchHistory = [] as Array<["waitFor" | "find" | "findComponent" | "findExportedComponent" | "findComponentByCode" | "findByProps" | "findProp" | "findByCode" | "findStore" | "findByFactoryCode" | "mapMangledModule" | "extractAndLoadChunks" | "webpackDependantLazy" | "webpackDependantLazyComponent", any[]]>;
+export const webpackSearchHistory = [] as Array<["waitFor" | "find" | "findComponent" | "findExportedComponent" | "findComponentByCode" | "findComponentByFields" | "findByProps" | "findProp" | "findByCode" | "findStore" | "findByFactoryCode" | "mapMangledModule" | "extractAndLoadChunks" | "webpackDependantLazy" | "webpackDependantLazyComponent", any[]]>;
 
 function printFilter(filter: FilterFn) {
     if (filter.$$vencordProps != null) {
@@ -171,9 +186,9 @@ function wrapWebpackComponent<T extends object = any>(
 
     WrapperComponent[SYM_LAZY_COMPONENT_INNER] = () => InnerComponent;
 
-    function setInnerComponent(rawComponent: any, parsedComponent: LazyComponentType<T>) {
-        InnerComponent = parsedComponent;
-        Object.assign(WrapperComponent, rawComponent);
+    function setInnerComponent(RawComponent: any, ParsedComponent: LazyComponentType<T>) {
+        InnerComponent = ParsedComponent;
+        Object.assign(WrapperComponent, RawComponent);
     }
 
     return [WrapperComponent, setInnerComponent];
@@ -239,7 +254,7 @@ export function find<T = any>(filter: FilterFn, parse: (module: ModuleExports) =
     if (typeof parse !== "function")
         throw new Error("Invalid find parse. Expected a function got " + typeof parse);
 
-    const [proxy, setInnerValue] = proxyInner<T>(`Webpack find matched no module. Filter: ${printFilter(filter)}`, "Webpack find with proxy called on a primitive value.");
+    const [proxy, setInnerValue] = proxyInner<T>(`Webpack find matched no module. Filter: ${printFilter(filter)}`, "Webpack find with proxy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the find.");
     waitFor(filter, m => setInnerValue(parse(m)), { isIndirect: true });
 
     if (IS_REPORTER && !isIndirect) {
@@ -322,6 +337,29 @@ export function findComponentByCode<T extends object = any>(...code: CodeFilter 
 
     if (IS_REPORTER) {
         webpackSearchHistory.push(["findComponentByCode", [ComponentResult, ...newCode]]);
+    }
+
+    return ComponentResult;
+}
+
+/**
+ * Find the first exported class component which includes all the given fields in its prototype.
+ *
+ * @example findComponentByFields("renderTooltip", "shouldShowTooltip")
+ * @example findComponentByFields("renderTooltip", "shouldShowTooltip", Tooltip => Tooltip)
+ *
+ * @param code A list of fields to search each exported class component for
+ * @param parse A function that takes the found component as its first argument and returns a component. Useful if you want to wrap the found component in something. Defaults to the original component
+ * @returns The component if found, or a noop component
+ */
+export function findComponentByFields<T extends object = any>(...fields: PropsFilter | [...PropsFilter, (component: ModuleExports) => LazyComponentType<T>]) {
+    const parse = (typeof fields.at(-1) === "function" ? fields.pop() : m => m) as (component: ModuleExports) => LazyComponentType<T>;
+    const newFields = fields as PropsFilter;
+
+    const ComponentResult = findComponent<T>(filters.componentByFields(...newFields), parse, { isIndirect: true });
+
+    if (IS_REPORTER) {
+        webpackSearchHistory.push(["findComponentByCode", [ComponentResult, ...newFields]]);
     }
 
     return ComponentResult;
@@ -514,7 +552,7 @@ export function mapMangledModule<S extends PropertyKey>(code: string | RegExp | 
 export function findModuleFactory(...code: CodeFilter) {
     const filter = filters.byFactoryCode(...code);
 
-    const [proxy, setInnerValue] = proxyInner<AnyModuleFactory>(`Webpack module factory find matched no module. Filter: ${printFilter(filter)}`, "Webpack find with proxy called on a primitive value.");
+    const [proxy, setInnerValue] = proxyInner<AnyModuleFactory>(`Webpack module factory find matched no module. Filter: ${printFilter(filter)}`, "Webpack find with proxy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the find.");
     waitFor(filter, (_, { factory }) => setInnerValue(factory));
 
     if (proxy[SYM_PROXY_INNER_VALUE] != null) return proxy[SYM_PROXY_INNER_VALUE] as AnyModuleFactory;
@@ -535,7 +573,7 @@ export function findModuleFactory(...code: CodeFilter) {
 export function webpackDependantLazy<T = any>(factory: () => T, attempts?: number) {
     if (IS_REPORTER) webpackSearchHistory.push(["webpackDependantLazy", [factory]]);
 
-    return proxyLazy<T>(factory, attempts);
+    return proxyLazy<T>(factory, attempts, `Webpack dependant lazy factory failed:\n\n${factory}`, "Webpack dependant lazy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the lazy.");
 }
 
 /**
@@ -550,7 +588,7 @@ export function webpackDependantLazy<T = any>(factory: () => T, attempts?: numbe
 export function webpackDependantLazyComponent<T extends object = any>(factory: () => any, attempts?: number) {
     if (IS_REPORTER) webpackSearchHistory.push(["webpackDependantLazyComponent", [factory]]);
 
-    return LazyComponent<T>(factory, attempts);
+    return LazyComponent<T>(factory, attempts, `Webpack dependant LazyComponent factory failed:\n\n${factory}`);
 }
 
 export const DefaultExtractAndLoadChunksRegex = /(?:(?:Promise\.all\(\[)?(\i\.e\("?[^)]+?"?\)[^\]]*?)(?:\]\))?|Promise\.resolve\(\))\.then\(\i\.bind\(\i,"?([^)]+?)"?\)\)/;
@@ -567,7 +605,7 @@ export function extractAndLoadChunksLazy(code: string | RegExp | CodeFilter, mat
     const module = findModuleFactory(...Array.isArray(code) ? code : [code]);
 
     const extractAndLoadChunks = makeLazy(async () => {
-        if (module[SYM_PROXY_INNER_VALUE] == null) {
+        if (module[SYM_PROXY_INNER_GET] != null && module[SYM_PROXY_INNER_VALUE] == null) {
             const err = new Error("extractAndLoadChunks: Couldn't find module factory");
 
             if (!IS_DEV || devToolsOpen) {
