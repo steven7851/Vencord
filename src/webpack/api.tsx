@@ -78,7 +78,7 @@ export type FilterFn = ((module: ModuleExports) => boolean) & {
     $$vencordIsFactoryFilter?: boolean;
 };
 
-const stringMatches = (s: string, filter: CodeFilter) =>
+export const stringMatches = (s: string, filter: CodeFilter) =>
     filter.every(f =>
         typeof f === "string"
             ? s.includes(f)
@@ -573,7 +573,7 @@ export function findModuleFactory(...code: CodeFilter) {
 export function webpackDependantLazy<T = any>(factory: () => T, attempts?: number) {
     if (IS_REPORTER) webpackSearchHistory.push(["webpackDependantLazy", [factory]]);
 
-    return proxyLazy<T>(factory, attempts, `Webpack dependant lazy factory failed:\n\n${factory}`, "Webpack dependant lazy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the lazy.");
+    return proxyLazy<T>(factory, attempts, `Webpack dependant lazy factory failed:\n${factory}`, "Webpack dependant lazy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the lazy.");
 }
 
 /**
@@ -588,11 +588,20 @@ export function webpackDependantLazy<T = any>(factory: () => T, attempts?: numbe
 export function webpackDependantLazyComponent<T extends object = any>(factory: () => any, attempts?: number) {
     if (IS_REPORTER) webpackSearchHistory.push(["webpackDependantLazyComponent", [factory]]);
 
-    return LazyComponent<T>(factory, attempts, `Webpack dependant LazyComponent factory failed:\n\n${factory}`);
+    return LazyComponent<T>(factory, attempts, `Webpack dependant LazyComponent factory failed:\n${factory}`);
 }
 
 export const DefaultExtractAndLoadChunksRegex = /(?:(?:Promise\.all\(\[)?(\i\.e\("?[^)]+?"?\)[^\]]*?)(?:\]\))?|Promise\.resolve\(\))\.then\(\i\.bind\(\i,"?([^)]+?)"?\)\)/;
 export const ChunkIdsRegex = /\("([^"]+?)"\)/g;
+
+function handleWebpackError(err: string, ...args: any[]) {
+    if (!IS_DEV || devToolsOpen) {
+        logger.warn(err, ...args);
+        return false;
+    }
+
+    throw new Error(err); // Throw the error in development if devtools are closed
+}
 
 /**
  * Extract and load chunks using their entry point.
@@ -606,38 +615,17 @@ export function extractAndLoadChunksLazy(code: string | RegExp | CodeFilter, mat
 
     const extractAndLoadChunks = makeLazy(async () => {
         if (module[SYM_PROXY_INNER_GET] != null && module[SYM_PROXY_INNER_VALUE] == null) {
-            const err = new Error("extractAndLoadChunks: Couldn't find module factory");
-
-            if (!IS_DEV || devToolsOpen) {
-                logger.warn(err, "Code:", code, "Matcher:", matcher);
-                return false;
-            } else {
-                throw err; // Strict behaviour in DevBuilds to fail early and make sure the issue is found
-            }
+            return handleWebpackError("extractAndLoadChunks: Couldn't find module factory", "Code:", code, "Matcher:", matcher);
         }
 
         const match = String(module).match(canonicalizeMatch(matcher));
         if (!match) {
-            const err = new Error("extractAndLoadChunks: Couldn't find chunk loading in module factory code");
-
-            if (!IS_DEV || devToolsOpen) {
-                logger.warn(err, "Code:", code, "Matcher:", matcher);
-                return false;
-            } else {
-                throw err; // Strict behaviour in DevBuilds to fail early and make sure the issue is found
-            }
+            return handleWebpackError("extractAndLoadChunks: Couldn't find chunk loading in module factory code", "Code:", code, "Matcher:", matcher);
         }
 
         const [, rawChunkIds, entryPointId] = match;
         if (Number.isNaN(Number(entryPointId))) {
-            const err = new Error("extractAndLoadChunks: Matcher didn't return a capturing group with the chunk ids array, or the entry point id returned as the second group wasn't a number");
-
-            if (!IS_DEV || devToolsOpen) {
-                logger.warn(err, "Code:", code, "Matcher:", matcher);
-                return false;
-            } else {
-                throw err; // Strict behaviour in DevBuilds to fail early and make sure the issue is found
-            }
+            return handleWebpackError("extractAndLoadChunks: Matcher didn't return a capturing group with the chunk ids array, or the entry point id returned as the second group wasn't a number", "Code:", code, "Matcher:", matcher);
         }
 
         if (rawChunkIds) {
@@ -646,14 +634,7 @@ export function extractAndLoadChunksLazy(code: string | RegExp | CodeFilter, mat
         }
 
         if (wreq.m[entryPointId] == null) {
-            const err = new Error("extractAndLoadChunks: Entry point is not loaded in the module factories, perhaps one of the chunks failed to load");
-
-            if (!IS_DEV || devToolsOpen) {
-                logger.warn(err, "Code:", code, "Matcher:", matcher);
-                return false;
-            } else {
-                throw err; // Strict behaviour in DevBuilds to fail early and make sure the issue is found
-            }
+            return handleWebpackError("extractAndLoadChunks: Entry point is not loaded in the module factories, perhaps one of the chunks failed to load", "Code:", code, "Matcher:", matcher);
         }
 
         wreq(Number(entryPointId));
@@ -684,8 +665,9 @@ export type CacheFindResult = {
  * @param filter A function that takes an export or module exports and returns a boolean
  */
 export const _cacheFind = traceFunction("cacheFind", function _cacheFind(filter: FilterFn): CacheFindResult {
-    if (typeof filter !== "function")
+    if (typeof filter !== "function") {
         throw new Error("Invalid filter. Expected a function got " + typeof filter);
+    }
 
     for (const key in cache) {
         const mod = cache[key];
@@ -742,8 +724,9 @@ export function cacheFind(filter: FilterFn) {
  * @returns An array of all the found export or module exports
  */
 export function cacheFindAll(filter: FilterFn) {
-    if (typeof filter !== "function")
+    if (typeof filter !== "function") {
         throw new Error("Invalid filter. Expected a function got " + typeof filter);
+    }
 
     const ret: ModuleExports[] = [];
     for (const key in cache) {
@@ -784,6 +767,69 @@ export function cacheFindAll(filter: FilterFn) {
 }
 
 /**
+ * Find the id of the first already loaded module factory that includes all the given code.
+ */
+export const cacheFindModuleId = traceFunction("cacheFindModuleId", function cacheFindModuleId(...code: CodeFilter) {
+    const parsedCode = code.map(canonicalizeMatch);
+
+    for (const id in wreq.m) {
+        if (stringMatches(String(wreq.m[id]), parsedCode)) {
+            return id;
+        }
+    }
+});
+
+/**
+ * Search modules by keyword. This searches the factory methods,
+ * meaning you can search all sorts of things, methodName, strings somewhere in the code, etc.
+ *
+ * @param code One or more strings or regexes
+ * @returns Mapping of found modules
+ */
+export function search(...code: CodeFilter) {
+    code = code.map(canonicalizeMatch);
+
+    const results: WebpackRequire["m"] = {};
+    const factories = wreq.m;
+
+    for (const id in factories) {
+        const factory = factories[id];
+
+        if (stringMatches(String(factory), code)) {
+            results[id] = factory;
+        }
+    }
+
+    return results;
+}
+
+/**
+ * Extract a specific module by id into its own Source File. This has no effect on
+ * the code, it is only useful to be able to look at a specific module without having
+ * to view a massive file. extract then returns the extracted module so you can jump to it.
+ * As mentioned above, note that this extracted module is not actually used,
+ * so putting breakpoints or similar will have no effect.
+ *
+ * @param id The id of the module to extract
+ */
+export function extract(id: PropertyKey) {
+    const factory = wreq.m[id];
+    if (!factory) return null;
+
+    const code = `
+// [EXTRACTED] WebpackModule${String(id)}
+// WARNING: This module was extracted to be more easily readable.
+//          This module is NOT ACTUALLY USED! This means putting breakpoints will have NO EFFECT!!
+
+0,${String(factory)}
+//# sourceURL=ExtractedWebpackModule${String(id)}
+`;
+    const extracted: ModuleFactory = (0, eval)(code);
+    return extracted;
+}
+
+/**
+ * @deprecated Use separate finds instead
  * Same as {@link cacheFind} but in bulk.
  *
  * @param filterFns Array of filters
@@ -867,38 +913,11 @@ export const cacheFindBulk = traceFunction("cacheFindBulk", function cacheFindBu
         }
     }
 
-    if (found !== length) {
-        const err = new Error(`Got ${length} filters, but only found ${found} modules!`);
-
-        if (!IS_DEV || devToolsOpen) {
-            logger.warn(err);
-            return null;
-        } else {
-            throw err; // Strict behaviour in DevBuilds to fail early and make sure the issue is found
-        }
-    }
-
     return results;
 });
 
 /**
- * Find the id of the first already loaded module factory that includes all the given code.
- */
-export const cacheFindModuleId = traceFunction("cacheFindModuleId", function cacheFindModuleId(...code: CodeFilter) {
-    for (const id in wreq.m) {
-        if (stringMatches(String(wreq.m[id]), code)) return id;
-    }
-
-    const err = new Error("Didn't find module with code(s):\n" + code.join("\n"));
-
-    if (!IS_DEV || devToolsOpen) {
-        logger.warn(err);
-    } else {
-        throw err; // Strict behaviour in DevBuilds to fail early and make sure the issue is found
-    }
-});
-
-/**
+ * @deprecated use {@link findModuleFactory} instead
  * Find the first already loaded module factory that includes all the given code.
  */
 export const cacheFindModuleFactory = traceFunction("cacheFindModuleFactory", function cacheFindModuleFactory(...code: CodeFilter) {
@@ -907,53 +926,6 @@ export const cacheFindModuleFactory = traceFunction("cacheFindModuleFactory", fu
 
     return wreq.m[id];
 });
-
-/**
- * Search modules by keyword. This searches the factory methods,
- * meaning you can search all sorts of things, methodName, strings somewhere in the code, etc.
- *
- * @param code One or more strings or regexes
- * @returns Mapping of found modules
- */
-export function search(...code: CodeFilter) {
-    const results: WebpackRequire["m"] = {};
-    const factories = wreq.m;
-
-    for (const id in factories) {
-        const factory = factories[id];
-
-        if (stringMatches(String(factory), code)) {
-            results[id] = factory;
-        }
-    }
-
-    return results;
-}
-
-/**
- * Extract a specific module by id into its own Source File. This has no effect on
- * the code, it is only useful to be able to look at a specific module without having
- * to view a massive file. extract then returns the extracted module so you can jump to it.
- * As mentioned above, note that this extracted module is not actually used,
- * so putting breakpoints or similar will have no effect.
- *
- * @param id The id of the module to extract
- */
-export function extract(id: PropertyKey) {
-    const factory = wreq.m[id];
-    if (!factory) return null;
-
-    const code = `
-// [EXTRACTED] WebpackModule${String(id)}
-// WARNING: This module was extracted to be more easily readable.
-//          This module is NOT ACTUALLY USED! This means putting breakpoints will have NO EFFECT!!
-
-0,${String(factory)}
-//# sourceURL=ExtractedWebpackModule${String(id)}
-`;
-    const extracted: ModuleFactory = (0, eval)(code);
-    return extracted;
-}
 
 function deprecatedRedirect<T extends (...args: any[]) => any>(oldMethod: string, newMethod: string, redirect: T): T {
     return ((...args: Parameters<T>) => {
