@@ -464,6 +464,8 @@ export function findByFactoryCode<T = any>(...code: CodeFilter | [...CodeFilter,
  * Find the module exports of the first module which the factory when stringified includes all the given code,
  * then map them into an easily usable object via the specified mappers.
  *
+ * IMPORTANT: mapMangledModule is the only way to webpack find primitive values, as long as you dont destructure them at top level.
+ *
  * IMPORTANT: You can destructure the properties of the returned object at top level as long as the property filter does not return a primitive value export.
  *
  * @example
@@ -554,7 +556,7 @@ export function findModuleFactory(code: CodeFilterWithSingle, { isIndirect = fal
     const filter = filters.byFactoryCode(...Array.isArray(code) ? code : [code]);
 
     const [proxy, setInnerValue] = proxyInner<AnyModuleFactory>(`Webpack module factory find matched no module. Filter: ${printFilter(filter)}`, "Webpack find with proxy called on a primitive value. This can happen if you try to destructure a primitive in the top level definition of the find.");
-    waitFor(filter, (_, { factory }) => setInnerValue(factory));
+    waitFor(filter, (_, { factory }) => setInnerValue(factory), { isIndirect: true });
 
     if (IS_REPORTER && !isIndirect) {
         webpackSearchHistory.push(["findModuleFactory", [proxy, code]]);
