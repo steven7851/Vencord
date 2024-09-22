@@ -7,8 +7,8 @@
 import { classNameFactory } from "@api/Styles";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { classes } from "@utils/misc";
-import { filters, findByCode, findComponentByCode, findProp, findStore, mapMangledModule } from "@webpack";
-import { ChannelStore, GuildStore, IconUtils, match, NavigationRouter, P, PermissionsBits, PermissionStore, React, showToast, Text, Toasts, Tooltip, useMemo, UserStore, useStateFromStores } from "@webpack/common";
+import { filters, findByCode, findByProps, findComponentByCode, findProp, findStore, mapMangledModule } from "@webpack";
+import { ChannelRouter, ChannelStore, GuildStore, IconUtils, match, P, PermissionsBits, PermissionStore, React, showToast, Text, Toasts, Tooltip, useMemo, UserStore, useStateFromStores } from "@webpack/common";
 import { Channel } from "discord-types/general";
 
 const cl = classNameFactory("vc-uvs-");
@@ -23,6 +23,8 @@ const VoiceStateStore = findStore("VoiceStateStore");
 const UserSummaryItem = findComponentByCode("defaultRenderUser", "showDefaultAvatarsForNullUsers");
 const Avatar = findComponentByCode(".AVATAR_STATUS_TYPING_16;");
 const GroupDMAvatars = findComponentByCode(".AvatarSizeSpecs[", "getAvatarURL");
+
+const ActionButtonClasses = findByProps("actionButton", "highlight");
 
 interface IconProps extends React.ComponentPropsWithoutRef<"div"> {
     size?: number;
@@ -74,9 +76,10 @@ function LockedSpeakerIcon(props: IconProps) {
 
 interface VoiceChannelTooltipProps {
     channel: Channel;
+    isLocked: boolean;
 }
 
-function VoiceChannelTooltip({ channel }: VoiceChannelTooltipProps) {
+function VoiceChannelTooltip({ channel, isLocked }: VoiceChannelTooltipProps) {
     const voiceStates = useStateFromStores([VoiceStateStore], () => VoiceStateStore.getVoiceStatesForChannel(channel.id));
 
     const users = useMemo(
@@ -113,7 +116,7 @@ function VoiceChannelTooltip({ channel }: VoiceChannelTooltipProps) {
                 <Text variant="text-sm/semibold">{channelName}</Text>
             </div>
             <div className={cl("vc-members")}>
-                <SpeakerIcon size={18} />
+                {isLocked ? <LockedSpeakerIcon size={18} /> : <SpeakerIcon size={18} />}
                 <UserSummaryItem
                     users={users}
                     renderIcon={false}
@@ -127,13 +130,15 @@ function VoiceChannelTooltip({ channel }: VoiceChannelTooltipProps) {
 
 interface VoiceChannelIndicatorProps {
     userId: string;
-    isActionButton?: boolean;
     isMessageIndicator?: boolean;
+    isProfile?: boolean;
+    isActionButton?: boolean;
+    shouldHighlight?: boolean;
 }
 
 const clickTimers = {} as Record<string, any>;
 
-export const VoiceChannelIndicator = ErrorBoundary.wrap(({ userId, isActionButton, isMessageIndicator }: VoiceChannelIndicatorProps) => {
+export const VoiceChannelIndicator = ErrorBoundary.wrap(({ userId, isMessageIndicator, isProfile, isActionButton, shouldHighlight }: VoiceChannelIndicatorProps) => {
     const channelId = useStateFromStores([VoiceStateStore], () => VoiceStateStore.getVoiceStateForUser(userId)?.channelId as string | undefined);
 
     const channel = channelId == null ? undefined : ChannelStore.getChannel(channelId);
@@ -165,7 +170,7 @@ export const VoiceChannelIndicator = ErrorBoundary.wrap(({ userId, isActionButto
             selectVoiceChannel(channelId);
         } else {
             clickTimers[channelId] = setTimeout(() => {
-                NavigationRouter.transitionTo(`/channels/${channel.getGuildId() ?? "@me"}/${channelId}`);
+                ChannelRouter.transitionToChannel(channelId);
                 delete clickTimers[channelId];
             }, 250);
         }
@@ -173,23 +178,21 @@ export const VoiceChannelIndicator = ErrorBoundary.wrap(({ userId, isActionButto
 
     return (
         <Tooltip
-            text={<VoiceChannelTooltip channel={channel} />}
+            text={<VoiceChannelTooltip channel={channel} isLocked={isLocked} />}
             tooltipClassName={cl("tooltip-container")}
             tooltipContentClassName={cl("tooltip-content")}
         >
             {props => {
                 const iconProps: IconProps = {
                     ...props,
-                    className: isActionButton ? cl("indicator-action-button") : cl("speaker-padding"),
+                    className: classes(isMessageIndicator && cl("message-indicator"), (!isProfile && !isActionButton) && cl("speaker-margin"), isActionButton && ActionButtonClasses.actionButton, shouldHighlight && ActionButtonClasses.highlight),
                     size: isActionButton ? 20 : undefined,
                     onClick
                 };
 
-                return <div className={isMessageIndicator ? cl("message-indicator") : undefined}>
-                    {isLocked ?
-                        <LockedSpeakerIcon {...iconProps} />
-                        : <SpeakerIcon {...iconProps} />}
-                </div>;
+                return isLocked ?
+                    <LockedSpeakerIcon {...iconProps} />
+                    : <SpeakerIcon {...iconProps} />;
             }}
         </Tooltip>
     );
